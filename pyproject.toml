@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "ag-ui-protocol>=0.1.10",
     "docker>=7.1.0",
     "ipykernel>=7.1.0",
 ]
