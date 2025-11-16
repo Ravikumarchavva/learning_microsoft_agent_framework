@@ -7,45 +7,64 @@ export function useAgentWebSocket(url: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const messageBufferRef = useRef<Map<string, string>>(new Map());
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      setIsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const agEvent: AgentEvent = JSON.parse(event.data);
-        handleAgentEvent(agEvent);
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setIsConnected(false);
-      // Reconnect after 3 seconds
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.CLOSED) {
-          window.location.reload();
-        }
-      }, 3000);
-    };
+    connectWebSocket();
 
     return () => {
-      ws.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
+  }, [url]);
+
+  const connectWebSocket = useCallback(() => {
+    try {
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        setIsConnected(true);
+        setConnectionError(null);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const agEvent: AgentEvent = JSON.parse(event.data);
+          handleAgentEvent(agEvent);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionError('Failed to connect to server. Is the backend running on port 8000?');
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        setIsConnected(false);
+        setConnectionError('Disconnected from server. Reconnecting...');
+        
+        // Attempt to reconnect after 3 seconds
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log('Attempting to reconnect...');
+          connectWebSocket();
+        }, 3000);
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+      setConnectionError('Failed to create WebSocket connection');
+    }
   }, [url]);
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
@@ -167,6 +186,7 @@ export function useAgentWebSocket(url: string) {
     messages,
     isConnected,
     isProcessing,
+    connectionError,
     sendMessage,
   };
 }
